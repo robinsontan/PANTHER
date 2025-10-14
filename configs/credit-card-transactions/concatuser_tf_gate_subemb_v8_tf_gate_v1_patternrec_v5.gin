@@ -1,0 +1,2 @@
+include './base.gin'
+train_fn.block_type = ["concat_useremb", "tf_gate", "subseq_emb_v8", "subseq_attngate", "xattn_pattern_v5"]

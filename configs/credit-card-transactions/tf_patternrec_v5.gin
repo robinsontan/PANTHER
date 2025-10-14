@@ -1,0 +1,2 @@
+include './base.gin'
+train_fn.block_type = ["transformer", "xattn_pattern_v5"]

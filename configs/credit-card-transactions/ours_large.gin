@@ -1,0 +1,5 @@
+include './large.gin'
+train_fn.block_type = ["tf_gate", "subseq_emb_v8", "subseq_attngate", "xattn_pattern_v5"]
+hstu_encoder.num_blocks = 6
+hstu_encoder.num_heads = 2
+train_fn.learning_rate = 2e-3

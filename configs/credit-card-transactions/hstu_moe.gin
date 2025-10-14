@@ -1,0 +1,3 @@
+# 以moe的方式增加参数量
+include './base.gin'
+train_fn.block_type = ["hstu","moe4hstu"]
