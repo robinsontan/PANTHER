@@ -1,0 +1,9 @@
+# 以moe的方式增加参数量
+include './training_base.gin'
+train_fn.main_module = "SASRec"
+sasrec_encoder.num_blocks = 4
+sasrec_encoder.num_heads = 2
+sasrec_encoder.ffn_dropout_rate = 0.2
+sasrec_encoder.ffn_hidden_dim = 50
+sasrec_encoder.ffn_activation_fn = "relu"
+sasrec_encoder.moe= True

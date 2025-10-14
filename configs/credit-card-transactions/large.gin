@@ -1,0 +1,8 @@
+include './training_base.gin'
+hstu_encoder.num_blocks = 8
+hstu_encoder.num_heads = 4
+hstu_encoder.dqk = 25
+hstu_encoder.dv = 25
+hstu_encoder.n_patterns = 64
+hstu_encoder.linear_dropout_rate = 0.2
+train_fn.main_module = "HSTU"

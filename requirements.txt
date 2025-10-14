@@ -1,0 +1,20 @@
+gin-config
+absl-py
+scikit-learn
+scipy
+matplotlib
+numpy
+apex
+hypothesis
+pandas
+fbgemm_gpu
+fvcore
+iopath
+tensorboard
+
+glom
+mlflow
+aim
+# aimflow
+tensorflow_io
+polars

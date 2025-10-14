@@ -1,0 +1,39 @@
+train_fn.local_data_path = "/apdcephfs_qy3/share_1372663/chengqili/down_stream_dataset"
+train_fn.log_interval = 10
+train_fn.eval_interval = 20
+train_fn.attr_loss = False
+train_fn.use_local_traindata = False
+train_fn.local_batch_size = 128
+
+train_fn.item_embedding_dim = 50
+
+train_fn.user_embedding_norm = "l2_norm"
+train_fn.dropout_rate = 0.2
+
+train_fn.max_sequence_length = 512
+
+train_fn.eval_batch_size = 1024
+train_fn.contrastive_regularization_strength = 0
+train_fn.num_epochs = 101
+train_fn.main_module_bf16 = False
+train_fn.min_context_len = 10  # context len
+
+train_fn.loss_module = "SampledSoftmaxLoss"  # SampledSoftmaxLoss
+train_fn.test_n_targets = 10
+
+train_fn.embedding_module_type = "ConcatenateEmbeddingModule" 
+train_fn.learning_rate = 1e-3
+train_fn.tokenizer_path = "prune99" 
+
+train_fn.weight_decay = 0
+train_fn.num_warmup_steps = 0
+
+train_fn.interaction_module_type = "DotProduct"
+train_fn.top_k_method = "MIPSBruteForceTopK"
+train_fn.num_negatives = 128
+
+create_negatives_sampler.sampling_strategy = 'in-batch'
+create_negatives_sampler.item_l2_norm = True
+create_negatives_sampler.l2_norm_eps = 1e-6
+train_fn.temperature = 0.05
+train_fn.enable_tf32 = True
