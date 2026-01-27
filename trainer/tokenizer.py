@@ -275,35 +275,40 @@ def get_tokenizer(path: str = "prune99") -> BehavioralTokenizer:
     }
     
     # Configure feature columns (for Cartesian product tokenization)
-    feature_columns = [feature_mapping.get(col, col.lower().replace(' ', '_')) 
-                      for col in seq_columns]
+    # IMPORTANT: Modify lists in place, don't reassign, so imported references stay valid
+    feature_columns.clear()
+    feature_columns.extend([feature_mapping.get(col, col.lower().replace(' ', '_')) 
+                           for col in seq_columns])
     
     # Configure attribute columns (user-level static attributes)
-    attr_columns = [col.lower().replace(' ', '_').replace('-', '_') 
-                   for col in element_columns]
+    attr_columns.clear()
+    attr_columns.extend([col.lower().replace(' ', '_').replace('-', '_') 
+                        for col in element_columns])
     
     # Continuous attributes that need bucketization
-    continuous_attrs = ['uhb_amount_bucket_seq', 'credit_limit', 
-                       'per_capita_income_zipcode', 'yearly_income_person']
+    continuous_attrs.clear()
+    continuous_attrs.extend(['uhb_amount_bucket_seq', 'credit_limit', 
+                            'per_capita_income_zipcode', 'yearly_income_person'])
     
     # Features to ignore during loss computation
-    ignore_loss_attrs = ['uhb_timestamp_seq', 'uhb_mch_sec_risklvl_seq']
+    ignore_loss_attrs.clear()
+    ignore_loss_attrs.extend(['uhb_timestamp_seq', 'uhb_mch_sec_risklvl_seq'])
     
     # Build individual feature tokenizers
-    ind_feature_tokenizer = {}
+    ind_feature_tokenizer.clear()
     for feature_name, feature_vocab in encoding_dict.items():
         if feature_name != 'beh_seq' and isinstance(feature_vocab, dict):
             ind_feature_tokenizer[feature_name] = feature_vocab
     
     # Build flat tokenizer for individual features (format: "feature_value")
-    ind_ind_feature_tokenizer = {}
+    ind_ind_feature_tokenizer.clear()
     for feature_name, feature_vocab in ind_feature_tokenizer.items():
         for value, idx in feature_vocab.items():
             key = f"{feature_name}_{value}"
             ind_ind_feature_tokenizer[key] = idx
     
     # Build user attribute tokenizer
-    user_attr_tokenizer = {}
+    user_attr_tokenizer.clear()
     for attr_name in attr_columns:
         if attr_name in encoding_dict:
             for value, idx in encoding_dict[attr_name].items():
@@ -311,13 +316,14 @@ def get_tokenizer(path: str = "prune99") -> BehavioralTokenizer:
                 user_attr_tokenizer[key] = idx
     
     # Calculate number of possible values per feature
-    num_feature_values = {
+    num_feature_values.clear()
+    num_feature_values.update({
         feature_name: len(feature_vocab) 
         for feature_name, feature_vocab in ind_feature_tokenizer.items()
-    }
+    })
     
     # Define action structure (behavioral token structure)
-    action_def = OrderedDict()
+    action_def.clear()
     for col in feature_columns:
         action_def[col] = num_feature_values.get(col, 100)
     
