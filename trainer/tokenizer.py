@@ -100,12 +100,17 @@ def bucketize_amount(amounts: List[Union[int, float]],
     if not amounts:
         return []
     
-    amounts_array = np.array([float(a) if a != '' and a is not None else 0.0 for a in amounts])
+    # Convert all amounts to float, handling various types
+    amounts_array = np.array([
+        float(a) if (a is not None and (isinstance(a, (int, float, str)) and str(a) != '')) else 0.0 
+        for a in amounts
+    ])
     
     if bins is not None:
         # Use pre-computed bins
         bin_indices = np.digitize(amounts_array, bins, right=True)
-        bin_indices = np.clip(bin_indices, 1, num_buckets)
+        # Clip to valid range [1, len(bins)]
+        bin_indices = np.clip(bin_indices, 1, len(bins))
     else:
         # Compute quantile-based bins on-the-fly
         if len(amounts_array) < num_buckets:
@@ -113,12 +118,13 @@ def bucketize_amount(amounts: List[Union[int, float]],
             unique_values = np.unique(amounts_array)
             bins = np.sort(unique_values)
             bin_indices = np.digitize(amounts_array, bins, right=True) + 1
+            bin_indices = np.clip(bin_indices, 1, len(bins) + 1)
         else:
             # Use quantile binning
             quantiles = np.linspace(0, 100, num_buckets + 1)
             bins = np.percentile(amounts_array, quantiles)
             bins = np.unique(bins)  # Remove duplicates
-            bin_indices = np.digitize(amounts_array, bins, right=True)
+            bin_indices = np.digitize(amounts_array, bins, right=True) + 1
             bin_indices = np.clip(bin_indices, 1, len(bins))
     
     return [str(int(idx)) for idx in bin_indices]
@@ -234,7 +240,12 @@ def get_tokenizer(path: str = "prune99") -> BehavioralTokenizer:
         }
     
     # Try to load bin_dict.pkl for continuous feature binning
-    bin_dict_path = f"{path}/bin_dict.pkl" if not path.endswith('.pkl') else path.replace('encoding_dict', 'bin_dict')
+    if path.endswith('.pkl'):
+        # If path is a specific file, look for bin_dict in same directory
+        bin_dict_path = path.replace('encoding_dict.pkl', 'bin_dict.pkl')
+    else:
+        bin_dict_path = f"{path}/bin_dict.pkl"
+    
     if not os.path.exists(bin_dict_path):
         for alt_path in ['./bin_dict.pkl', 'bin_dict.pkl', f'./{path}_bin_dict.pkl']:
             if os.path.exists(alt_path):
