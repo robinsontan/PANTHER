@@ -4,8 +4,11 @@ Training script for downstream fradu detection tasks on the CCT dataset.
 A DCN model is used to indicate the risk level of a transaction.
 """
 
+import argparse
 import os
 import pickle
+import random
+import time
 
 import numpy as np
 import pandas as pd
@@ -14,6 +17,49 @@ import torch.nn as nn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset
+
+
+def set_seed(seed):
+    """
+    Set random seeds for reproducibility across all random number generators.
+    
+    Args:
+        seed: Integer seed value, or None for random behavior
+    """
+    if seed is None:
+        # Use time-based seed for random behavior
+        seed = int(time.time() * 1000) % (2**32)
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # Enable deterministic behavior for reproducibility
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    return seed
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Train DCN model for fraud detection')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Random seed for reproducibility. If not set, uses time-based seed for random behavior.')
+    parser.add_argument('--epochs', type=int, default=100,
+                        help='Number of training epochs (default: 100)')
+    parser.add_argument('--lr', type=float, default=0.001,
+                        help='Learning rate (default: 0.001)')
+    parser.add_argument('--batch_size', type=int, default=1024,
+                        help='Training batch size (default: 1024)')
+    return parser.parse_args()
+
+
+# Parse arguments and set seed at the beginning
+args = parse_args()
+actual_seed = set_seed(args.seed)
+print(f"Using random seed: {actual_seed}")
 
 
 def use_bin(x, column):
@@ -424,32 +470,31 @@ def train_model(model, train_loader, val_loader, epochs=10, lr=0.001):
 fraud_df = df[df['fraud'] == 1]
 non_fraud_df = df[df['fraud'] == 0]
 
-# Undersample negative class
-non_fraud_df = non_fraud_df.sample(n=len(fraud_df), random_state=42)
+# Undersample negative class (using the configured seed for reproducibility)
+non_fraud_df = non_fraud_df.sample(n=len(fraud_df), random_state=actual_seed)
 
 # Create balanced dataset
 balanced_df = pd.concat([fraud_df, non_fraud_df])
 
 # 2. Split into train/validation sets
-train_df, val_df = train_test_split(balanced_df, test_size=0.2, random_state=42, stratify=balanced_df['fraud'])
+train_df, val_df = train_test_split(balanced_df, test_size=0.2, random_state=actual_seed, stratify=balanced_df['fraud'])
 
 # 3. Create datasets and data loaders
 train_dataset = FraudDataset(train_df)
 val_dataset = FraudDataset(val_df)
 
-train_loader = DataLoader(train_dataset, batch_size=1024, shuffle=True)
+# Set worker seed function for DataLoader reproducibility
+def worker_init_fn(worker_id):
+    np.random.seed(actual_seed + worker_id)
+
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, worker_init_fn=worker_init_fn)
 val_loader = DataLoader(val_dataset, batch_size=65536, shuffle=False)
 
-# 4. Initialize model with fixed random seed
-seed = 42
-torch.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
-np.random.seed(seed)
-
+# 4. Initialize model (seed already set at the beginning of the script)
 numeric_dim = len(train_dataset.numeric_data[0])
 cat_dims = train_dataset.cat_dims
 
 model = DCN(numeric_dim, cat_dims)
 
 # 5. Train model
-trained_model = train_model(model, train_loader, val_loader, epochs=100, lr=0.001)
+trained_model = train_model(model, train_loader, val_loader, epochs=args.epochs, lr=args.lr)
