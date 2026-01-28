@@ -14,7 +14,7 @@ Usage:
 import logging
 import os
 import sys
-from typing import Optional
+import traceback
 
 import gin
 import numpy as np
@@ -23,7 +23,7 @@ import torch
 from absl import app, flags
 from tqdm import tqdm
 
-from eval_tool import ParquetDataset, batch_data, get_input
+from eval_tool import ParquetDataset, get_input
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -38,6 +38,11 @@ flags.DEFINE_string("local_data_path", "./", "Path to local data directory.")
 
 FLAGS = flags.FLAGS
 
+# Embedding dimensions expected by cct_fraud_detection.py
+# usr_emb: 48 dimensions (user attribute embeddings)
+# beh_emb: 74 dimensions (behavior sequence embeddings)
+USR_EMB_DIM = 48
+BEH_EMB_DIM = 74
 
 @gin.configurable
 def export_embeddings(
@@ -68,8 +73,24 @@ def export_embeddings(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"Using device: {device}")
     
+    # Validate required files exist
+    embedding_dict_path = os.path.join(local_data_path, 'embedding_num_dict.pt')
+    if not os.path.exists(embedding_dict_path):
+        raise FileNotFoundError(
+            f"Required file not found: {embedding_dict_path}. "
+            "Please run cct_preprocess.py first to generate this file."
+        )
+    
+    data_path = os.path.join(local_data_path, 'beh_seq_combined.parquet')
+    if not os.path.exists(data_path):
+        logging.warning(
+            f"Data file not found: {data_path}. "
+            "Will only export item_embeddings.npy. "
+            "cub.csv will not be generated."
+        )
+    
     # Load embedding configuration
-    embedding_num_dict = torch.load(os.path.join(local_data_path, 'embedding_num_dict.pt'))
+    embedding_num_dict = torch.load(embedding_dict_path)
     max_item_id = embedding_num_dict['vocab_size']['beh_seq']
     
     logging.info(f"Max item ID: {max_item_id}")
@@ -88,18 +109,35 @@ def export_embeddings(
     
     # Load checkpoint
     if checkpoint_path:
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(
+                f"Checkpoint not found: {checkpoint_path}. "
+                "Please provide a valid path to a trained model checkpoint."
+            )
         logging.info(f"Loading checkpoint from {checkpoint_path}")
         state_dict = torch.load(checkpoint_path, map_location=device)
         model_state = state_dict["model_state_dict"]
         # Remove 'module.' prefix if present (from DDP training)
         model_state = {k.replace("module.", ""): v for k, v in model_state.items()}
-        model.load_state_dict(model_state, strict=False)
+        
+        # Load state dict and log any mismatched keys
+        missing_keys, unexpected_keys = model.load_state_dict(model_state, strict=False)
+        if missing_keys:
+            logging.warning(f"Missing keys when loading checkpoint: {missing_keys}")
+        if unexpected_keys:
+            logging.warning(f"Unexpected keys when loading checkpoint: {unexpected_keys}")
         logging.info("Checkpoint loaded successfully")
+    else:
+        logging.warning(
+            "No checkpoint_path provided. Using untrained model weights. "
+            "The exported embeddings may not be meaningful."
+        )
     
     model = model.to(device)
     model.eval()
     
     # Export item embeddings
+    # Note: Accessing _embedding_module._item_emb is required to get the raw embedding weights
     logging.info("Exporting item embeddings...")
     item_embeddings = model._embedding_module._item_emb.weight.detach().cpu().numpy()
     item_embeddings_path = os.path.join(output_dir, "item_embeddings.npy")
@@ -107,16 +145,13 @@ def export_embeddings(
     logging.info(f"Item embeddings saved to {item_embeddings_path}")
     logging.info(f"Item embeddings shape: {item_embeddings.shape}")
     
-    # Generate user behavior embeddings (cub.csv)
-    logging.info("Generating user behavior embeddings...")
-    
-    # Load behavior sequence data
-    data_path = os.path.join(local_data_path, 'beh_seq_combined.parquet')
+    # Generate user behavior embeddings (cub.csv) if data exists
     if not os.path.exists(data_path):
-        logging.warning(f"Data file not found: {data_path}")
-        logging.warning("Skipping cub.csv generation. Please ensure beh_seq_combined.parquet exists.")
+        logging.info("Skipping cub.csv generation due to missing data file.")
+        logging.info("Embedding export completed (item_embeddings.npy only)!")
         return
     
+    logging.info("Generating user behavior embeddings...")
     dataset = ParquetDataset(data_path, max_length=max_sequence_length + gr_output_length + 1, eval_flag=True)
     
     cub_records = []
@@ -175,16 +210,18 @@ def export_embeddings(
                     beh_emb = seq_embeddings[0, 0, :].cpu().numpy()
                 
                 # Format embeddings as comma-separated strings
-                usr_emb_str = ",".join([f"{x:.6f}" for x in usr_emb[:48]])  # First 48 dims
-                beh_emb_str = ",".join([f"{x:.6f}" for x in beh_emb[:74]])  # First 74 dims
+                # Dimensions defined by cct_fraud_detection.py expectations
+                usr_emb_str = ",".join([f"{x:.6f}" for x in usr_emb[:USR_EMB_DIM]])
+                beh_emb_str = ",".join([f"{x:.6f}" for x in beh_emb[:BEH_EMB_DIM]])
                 
                 cub_records.append({
                     "card": card_number,
                     "usr_emb": usr_emb_str,
                     "beh_emb": beh_emb_str,
                 })
-            except Exception as e:
+            except (RuntimeError, ValueError) as e:
                 logging.warning(f"Error processing user {idx}: {e}")
+                logging.debug(traceback.format_exc())
                 continue
     
     # Save cub.csv
@@ -203,11 +240,26 @@ def export_embeddings(
 def main(argv):
     if FLAGS.gin_config_file is not None:
         gin_path = os.path.abspath(FLAGS.gin_config_file)
-        old_directory = os.getcwd()
-        new_directory = os.path.join(os.getcwd(), 'configs', FLAGS.gin_config_file.split('/')[-2])
-        os.chdir(new_directory)
-        gin.parse_config_file(gin_path)
-        os.chdir(old_directory)
+        
+        # Extract config directory from gin config file path
+        # Expected format: configs/{config_group}/{config}.gin
+        gin_dir = os.path.dirname(gin_path)
+        if os.path.isdir(gin_dir):
+            config_dir = gin_dir
+        else:
+            # Fallback: try to construct from current directory
+            config_group = os.path.basename(os.path.dirname(FLAGS.gin_config_file))
+            config_dir = os.path.join(os.getcwd(), 'configs', config_group)
+        
+        if os.path.isdir(config_dir):
+            old_directory = os.getcwd()
+            os.chdir(config_dir)
+            gin.parse_config_file(gin_path)
+            os.chdir(old_directory)
+        else:
+            # Parse gin config from current directory if config_dir doesn't exist
+            logging.warning(f"Config directory not found: {config_dir}. Parsing gin config from current directory.")
+            gin.parse_config_file(gin_path)
     
     export_embeddings(
         checkpoint_path=FLAGS.checkpoint_path,

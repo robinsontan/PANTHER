@@ -1,5 +1,5 @@
 """
-Training script for downstream fradu detection tasks on the CCT dataset.
+Training script for downstream fraud detection tasks on the CCT dataset.
 
 A DCN model is used to indicate the risk level of a transaction.
 
