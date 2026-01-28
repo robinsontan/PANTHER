@@ -223,10 +223,19 @@ class FraudDataset(Dataset):
         # Convert labels to tensor
         self.labels = torch.tensor(df['fraud'].values, dtype=torch.float32)
         
-        # Process numeric features
-        numeric_cols = ['hour_last_txn', 'amount', 'ave30', 'median30', 'std30', 
-                       'areaincome', 'income', 'debt', 'FICO Score', 'Num Credit Cards',
-                       'creditlimit', 'days_since_open', 'pct_over30ave', 'pct_over30med', 'std_30hist']
+        # Process numeric features - original transaction features
+        base_numeric_cols = ['hour_last_txn', 'amount', 'ave30', 'median30', 'std30', 
+                            'areaincome', 'income', 'debt', 'FICO Score', 'Num Credit Cards',
+                            'creditlimit', 'days_since_open', 'pct_over30ave', 'pct_over30med', 'std_30hist']
+        
+        # Add user embeddings (48 dimensions)
+        usr_emb_cols = [f'usr_emb_{i+1}' for i in range(48)]
+        
+        # Add behavior embeddings (74 dimensions)
+        beh_emb_cols = [f'beh_emb_{i+1}' for i in range(74)]
+        
+        # Combine all numeric features
+        numeric_cols = base_numeric_cols + usr_emb_cols + beh_emb_cols
         self.numeric_data = df[numeric_cols].values.astype(np.float32)
         
         # Standardize numeric features
